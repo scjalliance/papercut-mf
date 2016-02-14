@@ -8,14 +8,15 @@ case "$1" in
 		;;
 esac
 
+RANDOMPASSWORD=""
+
 # fix/hijack permissions on /papercut/server/data
 chown -R papercut:papercut /papercut/server/data
 
 # are we installed already?
 if [ -x /etc/init.d/papercut ]; then
 	if [ -f /papercut/import.zip -a ! -f /papercut/import.log ]; then
-		runuser -l papercut -c "/papercut/server/bin/linux-x64/db-tools init-db -f" | tee -a /papercut/import.log
-		runuser -l papercut -c "/papercut/server/bin/linux-x64/db-tools import-db -f /papercut/import.zip" | tee -a /papercut/import.log
+		runuser -l papercut -c "yes | /papercut/server/bin/linux-x64/db-tools import-db -f /papercut/import.zip" | tee -a /papercut/import.log
 	fi
 
         /etc/init.d/papercut start || exit 1
@@ -27,6 +28,13 @@ if [ -x /etc/init.d/papercut ]; then
 # do we have the installer payload?
 elif [ -f /installer/pcmf-setup.sh ]; then
 	echo INSTALLING...
+
+	if [ -z "$PASSWORD" ]; then
+		PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+		echo "PASSWORD WILL BE SET TO $PASSWORD FOR USER admin"
+		RANDOMPASSWORD=1
+	fi
+
 	cd /installer || exit 1
 	bash pcmf-setup.sh -e || exit 1
 	cd papercut || exit 1
@@ -36,10 +44,16 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 	sed -i 's/read reply/#read reply/g' install || exit 1
 	runuser -l papercut -c "cd /installer/papercut && bash install $SERVERTYPE" || exit 1
 	cd /papercut || exit 1
+	sed -i "s/admin.password=password/admin.password=$PASSWORD/" server/server.properties || exit 1
 	bash MUST-RUN-AS-ROOT || exit 1
         /etc/init.d/papercut stop
         /etc/init.d/papercut-web-print stop
         /etc/init.d/papercut-event-monitor stop
+
+	if [ ! -z "$RANDOMPASSWORD" -a ! -z "$PASSWORD" ]; then
+		echo "PASSWORD HAS BEEN SET TO $PASSWORD FOR USER admin"
+	fi
+
 	"$0" $*
 	exit
 
