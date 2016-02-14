@@ -17,6 +17,7 @@ RUN apt-get update \
        cups \
        cups-daemon \
        curl \
+       samba \
        wget \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
