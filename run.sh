@@ -14,8 +14,8 @@ chown -R papercut:papercut /papercut/server/data
 # are we installed already?
 if [ -x /etc/init.d/papercut ]; then
 	if [ -f /papercut/import.zip -a ! -f /papercut/import.log ]; then
-		/papercut/server/bin/db-tools init-db -f | tee -a /papercut/import.log || exit 1
-		/papercut/server/bin/db-tools import-db -f /papercut/import.zip | tee -a /papercut/import.log || exit 1
+		/papercut/server/bin/linux-x64/db-tools init-db -f | tee -a /papercut/import.log
+		/papercut/server/bin/linux-x64/db-tools import-db -f /papercut/import.zip | tee -a /papercut/import.log
 	fi
 
         /etc/init.d/papercut start || exit 1
