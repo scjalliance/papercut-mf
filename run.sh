@@ -12,7 +12,7 @@ esac
 if [ -x /etc/init.d/papercut ]; then
         /etc/init.d/papercut start
         /etc/init.d/papercut-event-monitor start
-	dmesg -w # or something...
+	sleep 99999d # or something...
 	exit
 
 # do we have the installer payload?

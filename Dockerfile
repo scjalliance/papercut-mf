@@ -2,11 +2,14 @@ FROM debian
 MAINTAINER Dusty Wilson <dusty.wilson@scjalliance.com>
 LABEL description="PaperCut MF Server"
 
-VOLUME /papercut/server/data
-EXPOSE 9191 9192 9193
-
 RUN useradd -mUd /papercut -s /bin/bash papercut
 WORKDIR /papercut
+
+RUN mkdir -p /papercut/server/data \
+    && chown -R papercut:papercut /papercut
+VOLUME /papercut/server/data
+
+EXPOSE 9191 9192 9193
 
 RUN apt-get update \
     && apt-get install -y \
