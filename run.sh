@@ -8,9 +8,13 @@ case "$1" in
 		;;
 esac
 
+# fix/hijack permissions on /papercut/server/data
+chown -R papercut:papercut /papercut/server/data
+
 # are we installed already?
 if [ -x /etc/init.d/papercut ]; then
         /etc/init.d/papercut start
+        /etc/init.d/papercut-web-print start
         /etc/init.d/papercut-event-monitor start
 	sleep 99999d # or something...
 	exit
