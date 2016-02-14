@@ -13,7 +13,12 @@ chown -R papercut:papercut /papercut/server/data
 
 # are we installed already?
 if [ -x /etc/init.d/papercut ]; then
-        /etc/init.d/papercut start
+	if [ -f /papercut/import.zip -a ! -f /papercut/import.log ]; then
+		/papercut/server/bin/db-tools init-db -f | tee -a /papercut/import.log || exit 1
+		/papercut/server/bin/db-tools import-db -f /papercut/import.zip | tee -a /papercut/import.log || exit 1
+	fi
+
+        /etc/init.d/papercut start || exit 1
         /etc/init.d/papercut-web-print start
         /etc/init.d/papercut-event-monitor start
 	sleep 99999d # or something...
@@ -32,6 +37,9 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 	runuser -l papercut -c "cd /installer/papercut && bash install $SERVERTYPE" || exit 1
 	cd /papercut || exit 1
 	bash MUST-RUN-AS-ROOT || exit 1
+        /etc/init.d/papercut stop
+        /etc/init.d/papercut-web-print stop
+        /etc/init.d/papercut-event-monitor stop
 	"$0" $*
 	exit
 
