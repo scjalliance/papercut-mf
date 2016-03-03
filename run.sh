@@ -1,12 +1,67 @@
 #!/bin/bash
 
-SERVERTYPE=""
+MY_HOSTNAME=$(hostname)
+SERVER_TYPE="primary"
+SERVER_TYPE_FLAG=""
+PRIMARY_HOSTNAME="localhost"
+WORKGROUP="WORKGROUP"
+WANT_PRINT_SERVICE=""
+KRB_REALM=""
 
-case "$1" in
-	site-server)
-		SERVERTYPE="--site-server"
-		;;
-esac
+# ENV variables:
+#   KRB_USERNAME
+#   KRB_PASSWORD
+
+for V in "$@"; do
+	case "$V" in
+		--hostname=*)
+			MY_HOSTNAME="${V#--hostname=}"
+			;;
+		--primary)
+			SERVER_TYPE="primary"
+			SERVER_TYPE_FLAG=""
+			;;
+		--site-server|site-server)
+			SERVER_TYPE="site"
+			SERVER_TYPE_FLAG="--site-server"
+			;;
+		--secondary)
+			SERVER_TYPE="secondary"
+			SERVER_TYPE_FLAG=""
+			WANT_PRINT_SERVICE=1
+			;;
+		--primaryhost=*)
+			PRIMARY_HOSTNAME="${V#--primaryhost=}"
+			;;
+		--workgroup=*)
+			WORKGROUP="${V#--workgroup=}"
+			;;
+		--printservice)
+			WANT_PRINT_SERVICE=1
+			;;
+		--noprintservice)
+			WANT_PRINT_SERVICE=""
+			;;
+		--krbrealm=*)
+			KRB_REALM="${V#--krbrealm=}"
+			;;
+	esac
+done
+
+if [ ! -z "$DEBUG" ]; then
+	echo "MY_HOSTNAME=$MY_HOSTNAME"
+	echo "SERVER_TYPE=$SERVER_TYPE"
+	echo "SERVER_TYPE_FLAG=$SERVER_TYPE_FLAG"
+	echo "PRIMARY_HOSTNAME=$PRIMARY_HOSTNAME"
+	echo "WORKGROUP=$WORKGROUP"
+	echo "WANT_PRINT_SERVICE=$WANT_PRINT_SERVICE"
+	echo "KRB_REALM=$KRB_REALM"
+fi
+
+if [ "$SERVER_TYPE" == "secondary" -a -z "$PRIMARY_HOSTNAME" ]; then
+	echo "Requires --primaryhost=<PRIMARY_HOSTNAME> value when using --secondary."
+	exit 1
+fi
 
 RANDOMPASSWORD=""
 
@@ -14,14 +69,27 @@ RANDOMPASSWORD=""
 chown -R papercut:papercut /papercut/server/data
 
 # are we installed already?
-if [ -x /etc/init.d/papercut ]; then
-	if [ -f /papercut/import.zip -a ! -f /papercut/import.log ]; then
-		runuser -l papercut -c "yes | /papercut/server/bin/linux-x64/db-tools import-db -f /papercut/import.zip" | tee -a /papercut/import.log
+if [ -x /etc/init.d/papercut-event-monitor ]; then
+	if [ ! -z "$KRB_REALM" ]; then
+		/etc/init.d/winbind start || exit 1
 	fi
 
-        /etc/init.d/papercut start || exit 1
-        /etc/init.d/papercut-web-print start
-        /etc/init.d/papercut-event-monitor start
+	if [ "$SERVER_TYPE" == "primary" ]; then
+		if [ -f /papercut/import.zip -a ! -f /papercut/import.log ]; then
+			runuser -l papercut -c "yes | /papercut/server/bin/linux-x64/db-tools import-db -f /papercut/import.zip" | tee -a /papercut/import.log
+		fi
+	fi
+
+	if [ "$SERVER_TYPE" == "primary" -o "$SERVER_TYPE" == "site-server" ]; then
+	        /etc/init.d/papercut start || exit 1
+	        /etc/init.d/papercut-web-print start
+	fi
+
+	if [ ! -z "$WANT_PRINT_SERVICE" ]; then
+		/etc/init.d/cups start || exit 1
+	fi
+
+	/etc/init.d/papercut-event-monitor start
 	sleep 99999d # or something...
 	exit
 
@@ -42,17 +110,61 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 	sed -i 's/answered=/answered=1/' install || exit 1
 	sed -i 's/manual=/manual=1/' install || exit 1
 	sed -i 's/read reply/#read reply/g' install || exit 1
-	runuser -l papercut -c "cd /installer/papercut && bash install $SERVERTYPE" || exit 1
-	cd /papercut || exit 1
-	sed -i "s/admin.password=password/admin.password=$PASSWORD/" server/server.properties || exit 1
-	bash MUST-RUN-AS-ROOT || exit 1
-        /etc/init.d/papercut stop
-        /etc/init.d/papercut-web-print stop
-        /etc/init.d/papercut-event-monitor stop
 
-	if [ ! -z "$RANDOMPASSWORD" -a ! -z "$PASSWORD" ]; then
-		echo "PASSWORD HAS BEEN SET TO $PASSWORD FOR USER admin"
+	cd /papercut || exit 1
+
+	if [ "$SERVER_TYPE" == "secondary" ]; then
+		cp -a /installer/papercut/providers providers || exit 1
+		chmod +x providers/print/linux-x64/setperms || exit 1
+		providers/print/linux-x64/setperms || exit 1
+		providers/print/linux-x64/roottasks || exit 1
+		sed -i "s/#* *ServerName *=.*/ServerName=$MY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
+		sed -i "s/#* *ApplicationServer *=.*/ApplicationServer=$PRIMARY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
+
+		# CUPS config: http://www.papercut.com/products/ng/manual/ch-linux.html#linux-install-print-queue-integration
+		#providers/print/linux-x64/configure-cups || exit 1
+	else
+		runuser -l papercut -c "cd /installer/papercut && bash install $SERVER_TYPE_FLAG" || exit 1
+		sed -i "s/admin.password=password/admin.password=$PASSWORD/" server/server.properties || exit 1
+		bash MUST-RUN-AS-ROOT || exit 1
+        	/etc/init.d/papercut stop
+	        /etc/init.d/papercut-web-print stop
+        	/etc/init.d/papercut-event-monitor stop
+
+		if [ ! -z "$RANDOMPASSWORD" -a ! -z "$PASSWORD" ]; then
+			echo "PASSWORD HAS BEEN SET TO $PASSWORD FOR USER admin"
+		fi
 	fi
+
+	# set Samba print command to use PaperCut
+	sed -i 's/.*print command *=.*//' /etc/samba/smb.conf
+	awk -i inplace '/\[global\]/ { print; print "print command=/papercut/providers/print/linux-x64/samba-print-provider -u \"%u\" -J \"%J\" -h \"%h\" -m \"%m\" -p \"%p\" -s \"%s\" -a \"lp -c -d%p %s; rm %s\" &@"; next }1' /etc/samba/smb.conf
+
+	# set Samba hostname
+	sed -i "s/;*#* *netbios name *=.*//" /etc/samba/smb.conf
+	awk -i inplace "/\[global\]/ { print; print \"netbios name = $MY_HOSTNAME\"; next }1" /etc/samba/smb.conf
+	sed -i "s/;*#* *workgroup *=.*//" /etc/samba/smb.conf
+	awk -i inplace "/\[global\]/ { print; print \"workgroup = $WORKGROUP\"; next }1" /etc/samba/smb.conf
+
+	# set Samba AD membership
+	if [ ! -z "$KRB_REALM" ]; then
+		sed -i "s/;*#* *security *=.*//" /etc/samba/smb.conf
+		awk -i inplace "/\[global\]/ { print; print \"security = ADS\"; next }1" /etc/samba/smb.conf
+		sed -i "s/;*#* *realm *=.*//" /etc/samba/smb.conf
+		awk -i inplace "/\[global\]/ { print; print \"realm = $KRB_REALM\"; next }1" /etc/samba/smb.conf
+	fi
+
+	if [ ! -z "$KRB_REALM" ]; then
+		sed -i "s/#* *default_realm *=.*/default_realm = $KRB_REALM/" /etc/krb5.conf
+
+		if [ ! -z "$KRB_USERNAME" -a ! -z "$KRB_PASSWORD" ]; then
+			echo "${KRB_PASSWORD}" | kinit ${KRB_USERNAME}@${KRB_REALM}
+			echo "${KRB_PASSWORD}" | net ads join -U ${KRB_USERNAME}
+		fi
+	fi
+
+	# remove unusable backends
+	rm -f /usr/lib/cups/backend/{parallel,serial,usb}
 
 	"$0" $*
 	exit

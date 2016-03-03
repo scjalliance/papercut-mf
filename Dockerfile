@@ -5,22 +5,32 @@ LABEL description="PaperCut MF Server"
 RUN useradd -mUd /papercut -s /bin/bash papercut
 WORKDIR /papercut
 
-RUN mkdir -p /papercut/server/data \
-    && chown -R papercut:papercut /papercut
-VOLUME /papercut/server/data
-
-EXPOSE 9191 9192 9193
-
 RUN apt-get update \
-    && apt-get install -y \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y \
        cpio \
        cups \
        cups-daemon \
        curl \
+       gawk \
+       krb5-user \
        samba \
        wget \
+       winbind \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 139 445 9191 9192 9193
+
+RUN mkdir -p /papercut/server/data \
+    && chown -R papercut:papercut /papercut
+
+VOLUME /etc/cups
+VOLUME /etc/samba
+VOLUME /papercut/server/data
+VOLUME /var/cache/cups
+VOLUME /var/lib/samba
+VOLUME /var/spool/cups
+VOLUME /var/spool/samba
 
 RUN mkdir /installer \
     && cd /installer \
@@ -37,10 +47,13 @@ CMD ["default"]
 # [Run notes:]
 #
 # Run a normal app server:
-# docker run -it --rm -p 9191:9191 -p 9192:9192 -p 9193:9193 scjalliance/papercut-mf
+# docker run -it --rm -p 445:445 -p 9191:9191 -p 9192:9192 -p 9193:9193 scjalliance/papercut-mf
 #
 # Run a site server:
-# docker run -it --rm -p 9191:9191 -p 9192:9192 -p 9193:9193 scjalliance/papercut-mf site-server
+# docker run -it --rm -p 445:445 -p 9191:9191 -p 9192:9192 -p 9193:9193 scjalliance/papercut-mf --site-server
+#
+# Run a secondary server:
+# docker run -it --rm -p 445:445 scjalliance/papercut-mf --secondary --primaryhost=primary-papercut.example.com
 
 
 # [Distribution notes:]
