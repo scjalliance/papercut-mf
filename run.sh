@@ -1,5 +1,7 @@
 #!/bin/bash
 
+export PASSWORD
+
 MY_HOSTNAME=$(hostname)
 SERVER_TYPE="primary"
 SERVER_TYPE_FLAG=""
@@ -118,11 +120,6 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		chmod +x providers/print/linux-x64/setperms || exit 1
 		providers/print/linux-x64/setperms || exit 1
 		providers/print/linux-x64/roottasks || exit 1
-		sed -i "s/#* *ServerName *=.*/ServerName=$MY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
-		sed -i "s/#* *ApplicationServer *=.*/ApplicationServer=$PRIMARY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
-
-		# CUPS config: http://www.papercut.com/products/ng/manual/ch-linux.html#linux-install-print-queue-integration
-		#providers/print/linux-x64/configure-cups || exit 1
 	else
 		runuser -l papercut -c "cd /installer/papercut && bash install $SERVER_TYPE_FLAG" || exit 1
 		sed -i "s/admin.password=password/admin.password=$PASSWORD/" server/server.properties || exit 1
@@ -134,6 +131,21 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		if [ ! -z "$RANDOMPASSWORD" -a ! -z "$PASSWORD" ]; then
 			echo "PASSWORD HAS BEEN SET TO $PASSWORD FOR USER admin"
 		fi
+	fi
+
+	if [ ! -z "$WANT_PRINT_SERVICE" ]; then
+		# CUPS config: http://www.papercut.com/products/ng/manual/ch-linux.html#linux-install-print-queue-integration
+		#providers/print/linux-x64/configure-cups || exit 1
+
+		sed -i "s/#* *ServerName *=.*/ServerName=$MY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
+		sed -i "s/#* *ApplicationServer *=.*/ApplicationServer=$PRIMARY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
+
+		sed -i "s/#* *Listen localhost:631/Listen 0.0.0.0:631/" /etc/cups/cupsd.conf || exit 1
+
+		awk -i inplace "/WebInterface/ { print; print \"DefaultEncryption Never\"; next }1" /etc/cups/cupsd.conf || exit 1
+		awk -i inplace "/<Location \/admin>/ { print; print \"Allow from all\"; next }1" /etc/cups/cupsd.conf || exit 1
+
+		useradd -mU -G lpadmin -p $(openssl passwd -1 -salt "$(hostname)" "$PASSWORD") printadmin
 	fi
 
 	# set Samba print command to use PaperCut

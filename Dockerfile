@@ -13,13 +13,14 @@ RUN apt-get update \
        curl \
        gawk \
        krb5-user \
+       printer-driver-all \
        samba \
        wget \
        winbind \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-EXPOSE 139 445 9191 9192 9193
+EXPOSE 139 445 631 9191 9192 9193
 
 RUN mkdir -p /papercut/server/data \
     && chown -R papercut:papercut /papercut
