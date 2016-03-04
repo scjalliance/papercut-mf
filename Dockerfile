@@ -2,11 +2,24 @@ FROM debian
 MAINTAINER Dusty Wilson <dusty.wilson@scjalliance.com>
 LABEL description="PaperCut MF Server"
 
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+       curl \
+       wget \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir /installer \
+    && cd /installer \
+    && wget -O pcmf-setup.sh $(curl https://www.papercut.com/products/mf/upgrade-available/ | grep https | cut -d'"' -f2 | grep -Ei "pcmf-setup-[0-9\.]+-linux-x64\.sh") \
+    && chmod 755 pcmf-setup.sh
+
 RUN useradd -mUd /papercut -s /bin/bash papercut
 WORKDIR /papercut
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+       adcli \
        cpio \
        cups \
        cups-daemon \
@@ -14,7 +27,10 @@ RUN apt-get update \
        gawk \
        krb5-user \
        printer-driver-all \
+       realmd \
        samba \
+       sssd-ad \
+       sssd-tools \
        wget \
        winbind \
     && apt-get clean \
@@ -32,11 +48,6 @@ VOLUME /var/cache/cups
 VOLUME /var/lib/samba
 VOLUME /var/spool/cups
 VOLUME /var/spool/samba
-
-RUN mkdir /installer \
-    && cd /installer \
-    && wget -O pcmf-setup.sh $(curl https://www.papercut.com/products/mf/upgrade-available/ | grep https | cut -d'"' -f2 | grep -Ei "pcmf-setup-[0-9\.]+-linux-x64\.sh") \
-    && chmod 755 pcmf-setup.sh
 
 COPY run.sh /papercut/
 RUN chmod 755 /papercut/run.sh

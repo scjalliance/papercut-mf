@@ -83,8 +83,8 @@ if [ -x /etc/init.d/papercut-event-monitor ]; then
 	fi
 
 	if [ "$SERVER_TYPE" == "primary" -o "$SERVER_TYPE" == "site-server" ]; then
-	        /etc/init.d/papercut start || exit 1
-	        /etc/init.d/papercut-web-print start
+		/etc/init.d/papercut start || exit 1
+		/etc/init.d/papercut-web-print start
 	fi
 
 	if [ ! -z "$WANT_PRINT_SERVICE" ]; then
@@ -137,20 +137,46 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		# CUPS config: http://www.papercut.com/products/ng/manual/ch-linux.html#linux-install-print-queue-integration
 		#providers/print/linux-x64/configure-cups || exit 1
 
+		# set my hostname for PaperCut reporting
 		sed -i "s/#* *ServerName *=.*/ServerName=$MY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
-		sed -i "s/#* *ApplicationServer *=.*/ApplicationServer=$PRIMARY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
 
+		if [ "$SERVER_TYPE" == "secondary" ]; then
+			# set my upstream
+			sed -i "s/#* *ApplicationServer *=.*/ApplicationServer=$PRIMARY_HOSTNAME/" providers/print/linux-x64/print-provider.conf || exit 1
+		fi
+
+		# get CUPS to listen on all IPs
 		sed -i "s/#* *Listen localhost:631/Listen 0.0.0.0:631/" /etc/cups/cupsd.conf || exit 1
 
+		# allow access to CUPS web UI
 		awk -i inplace "/WebInterface/ { print; print \"DefaultEncryption Never\"; next }1" /etc/cups/cupsd.conf || exit 1
-		awk -i inplace "/<Location \/admin>/ { print; print \"Allow from all\"; next }1" /etc/cups/cupsd.conf || exit 1
+		awk -i inplace "/<Location \// { print; print \"Allow from all\"; next }1" /etc/cups/cupsd.conf || exit 1
 
+		# create the printadmin user for CUPS
 		useradd -mU -G lpadmin -p $(openssl passwd -1 -salt "$(hostname)" "$PASSWORD") printadmin
-	fi
 
-	# set Samba print command to use PaperCut
-	sed -i 's/.*print command *=.*//' /etc/samba/smb.conf
-	awk -i inplace '/\[global\]/ { print; print "print command=/papercut/providers/print/linux-x64/samba-print-provider -u \"%u\" -J \"%J\" -h \"%h\" -m \"%m\" -p \"%p\" -s \"%s\" -a \"lp -c -d%p %s; rm %s\" &@"; next }1' /etc/samba/smb.conf
+		# set Samba print command to use PaperCut
+		sed -i 's/.*print command *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[global\]/ { print; print "print command = /papercut/providers/print/linux-x64/samba-print-provider -u \"%u\" -J \"%J\" -h \"%h\" -m \"%m\" -p \"%p\" -s \"%s\" -a \"lp -c -d%p %s; rm %s\" &@"; next }1' /etc/samba/smb.conf
+
+		# set Samba to use CUPS
+		sed -i 's/.*printing *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[global\]/ { print; print "printing = cups"; next }1' /etc/samba/smb.conf
+		sed -i 's/.*printcap *name *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[global\]/ { print; print "printcap name = cups"; next }1' /etc/samba/smb.conf
+		sed -i 's/.*load *printers *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[global\]/ { print; print "load printers = yes"; next }1' /etc/samba/smb.conf
+
+		# set Samba printer admin groups
+		sed -i 's/.*write *list *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[print$\]/ { print; print "write list = @lpadmin"; next }1' /etc/samba/smb.conf
+		sed -i 's/.*printer *admin *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[printers\]/ { print; print "printer admin = @lpadmin"; next }1' /etc/samba/smb.conf
+
+		# set Samba permissions
+		sed -i 's/.*read *only *=.*//' /etc/samba/smb.conf
+		awk -i inplace '/\[print$\]/ { print; print "read only = yes"; next }1' /etc/samba/smb.conf
+	fi
 
 	# set Samba hostname
 	sed -i "s/;*#* *netbios name *=.*//" /etc/samba/smb.conf
@@ -164,14 +190,18 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		awk -i inplace "/\[global\]/ { print; print \"security = ADS\"; next }1" /etc/samba/smb.conf
 		sed -i "s/;*#* *realm *=.*//" /etc/samba/smb.conf
 		awk -i inplace "/\[global\]/ { print; print \"realm = $KRB_REALM\"; next }1" /etc/samba/smb.conf
+		sed -i "s/;*#* *kerberos *method *=.*//" /etc/samba/smb.conf
+		awk -i inplace "/\[global\]/ { print; print \"kerberos method = secrets and keytab\"; next }1" /etc/samba/smb.conf
 	fi
 
 	if [ ! -z "$KRB_REALM" ]; then
 		sed -i "s/#* *default_realm *=.*/default_realm = $KRB_REALM/" /etc/krb5.conf
 
 		if [ ! -z "$KRB_USERNAME" -a ! -z "$KRB_PASSWORD" ]; then
-			echo "${KRB_PASSWORD}" | kinit ${KRB_USERNAME}@${KRB_REALM}
-			echo "${KRB_PASSWORD}" | net ads join -U ${KRB_USERNAME}
+			/etc/init.d/dbus start
+			#echo "${KRB_PASSWORD}" | kinit ${KRB_USERNAME}@${KRB_REALM}
+			#echo "${KRB_PASSWORD}" | net ads join -U ${KRB_USERNAME}@${KRB_REALM}
+			#net ads keytab create
 		fi
 	fi
 
