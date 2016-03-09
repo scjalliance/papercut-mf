@@ -73,7 +73,8 @@ chown -R papercut:papercut /papercut/server/data
 # are we installed already?
 if [ -x /etc/init.d/papercut-event-monitor ]; then
 	if [ ! -z "$KRB_REALM" ]; then
-		/etc/init.d/winbind start || exit 1
+		/etc/init.d/sssd start || exit 1
+		#/etc/init.d/winbind start || exit 1
 	fi
 
 	if [ "$SERVER_TYPE" == "primary" ]; then
@@ -170,8 +171,8 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		# set Samba printer admin groups
 		sed -i 's/.*write *list *=.*//' /etc/samba/smb.conf
 		awk -i inplace '/\[print$\]/ { print; print "write list = @lpadmin"; next }1' /etc/samba/smb.conf
-		sed -i 's/.*printer *admin *=.*//' /etc/samba/smb.conf
-		awk -i inplace '/\[printers\]/ { print; print "printer admin = @lpadmin"; next }1' /etc/samba/smb.conf
+		#sed -i 's/.*printer *admin *=.*//' /etc/samba/smb.conf
+		#awk -i inplace '/\[printers\]/ { print; print "printer admin = @lpadmin"; next }1' /etc/samba/smb.conf
 
 		# set Samba permissions
 		sed -i 's/.*read *only *=.*//' /etc/samba/smb.conf
@@ -194,14 +195,22 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 		awk -i inplace "/\[global\]/ { print; print \"kerberos method = secrets and keytab\"; next }1" /etc/samba/smb.conf
 	fi
 
+	# are we attaching to Active Directory?
+	# FIXME: maybe we should be sure it works for Kerberos? (not just Microsoft-style AD)
 	if [ ! -z "$KRB_REALM" ]; then
 		sed -i "s/#* *default_realm *=.*/default_realm = $KRB_REALM/" /etc/krb5.conf
 
 		if [ ! -z "$KRB_USERNAME" -a ! -z "$KRB_PASSWORD" ]; then
-			/etc/init.d/dbus start
-			#echo "${KRB_PASSWORD}" | kinit ${KRB_USERNAME}@${KRB_REALM}
-			#echo "${KRB_PASSWORD}" | net ads join -U ${KRB_USERNAME}@${KRB_REALM}
-			#net ads keytab create
+			# join the domain
+			echo "${KRB_PASSWORD}" | net ads join -U ${KRB_USERNAME}@${KRB_REALM}
+
+			# setup sssd
+			KRB5_KTNAME=FILE:/etc/krb5.sssd.keytab net ads keytab create -P
+			echo -e "[sssd]\nservices=nss,pam\nconfig_file_version=2\ndomains=${KRB_REALM}\n\n" > /etc/sssd/sssd.conf
+			echo -e "[nss]\n\n" >> /etc/sssd/sssd.conf
+			echo -e "[pam]\n\n" >> /etc/sssd/sssd.conf
+			echo -e "[domain/${KRB_REALM}]\nid_provider=ad\naccess_provider=ad\nkrb5_keytab=/etc/krb5.sssd.keytab\n\n" >> /etc/sssd/sssd.conf
+			chmod 600 /etc/sssd/sssd.conf
 		fi
 	fi
 
