@@ -24,7 +24,7 @@ RUN apt-get update \
 
 RUN mkdir /installer \
     && cd /installer \
-    && wget -O pcmf-setup.sh $(curl https://www.papercut.com/products/mf/upgrade-available/ | grep https | cut -d'"' -f2 | grep -Ei "pcmf-setup-[0-9\.]+-linux-x64\.sh") \
+    && wget -O pcmf-setup.sh $(curl https://www.papercut.com/products/mf/upgrade-available/ | grep https | grep -v link_previous | cut -d'"' -f2 | grep -Ei "pcmf-setup-[0-9\.]+-linux-x64\.sh" | awk '{sub(/^.*\?http=/, "", $1)}{sub(/\.sh.*?$/, ".sh", $1)}{print $1}' | sed -e's/%\([0-9A-F][0-9A-F]\)/\\\\\x\1/g' | xargs echo -e) \
     && chmod 755 pcmf-setup.sh
 
 COPY run.sh /papercut/
