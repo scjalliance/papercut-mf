@@ -14,6 +14,10 @@ KRB_REALM=""
 #   KRB_USERNAME
 #   KRB_PASSWORD
 
+if [ -f /vars ]; then
+	source /vars
+fi
+
 for V in "$@"; do
 	case "$V" in
 		--hostname=*)
@@ -170,13 +174,13 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 
 		# set Samba printer admin groups
 		sed -i 's/.*write *list *=.*//' /etc/samba/smb.conf
-		awk -i inplace '/\[print$\]/ { print; print "write list = @lpadmin"; next }1' /etc/samba/smb.conf
+		awk -i inplace '/\[print\$\]/ { print; print "   write list = @lpadmin"; next }1' /etc/samba/smb.conf
 		#sed -i 's/.*printer *admin *=.*//' /etc/samba/smb.conf
 		#awk -i inplace '/\[printers\]/ { print; print "printer admin = @lpadmin"; next }1' /etc/samba/smb.conf
 
 		# set Samba permissions
 		sed -i 's/.*read *only *=.*//' /etc/samba/smb.conf
-		awk -i inplace '/\[print$\]/ { print; print "read only = yes"; next }1' /etc/samba/smb.conf
+		awk -i inplace '/\[print\$\]/ { print; print "   read only = yes"; next }1' /etc/samba/smb.conf
 	fi
 
 	# set Samba hostname
@@ -209,7 +213,7 @@ elif [ -f /installer/pcmf-setup.sh ]; then
 			echo -e "[sssd]\nservices=nss,pam\nconfig_file_version=2\ndomains=${KRB_REALM}\n\n" > /etc/sssd/sssd.conf
 			echo -e "[nss]\n\n" >> /etc/sssd/sssd.conf
 			echo -e "[pam]\n\n" >> /etc/sssd/sssd.conf
-			echo -e "[domain/${KRB_REALM}]\nid_provider=ad\naccess_provider=ad\nkrb5_keytab=/etc/krb5.sssd.keytab\n\n" >> /etc/sssd/sssd.conf
+			echo -e "[domain/${KRB_REALM}]\nenumerate=true\nid_provider=ad\naccess_provider=ad\nkrb5_keytab=/etc/krb5.sssd.keytab\n\n" >> /etc/sssd/sssd.conf
 			chmod 600 /etc/sssd/sssd.conf
 		fi
 	fi
